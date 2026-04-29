@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>間取り検討 — LD + 洋室</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+    color: #222;
+  }
+  #sidebar {
+    width: 280px;
+    background: #f7f8fa;
+    padding: 14px;
+    overflow-y: auto;
+    border-right: 1px solid #ddd;
+    flex-shrink: 0;
+  }
+  #canvas-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #toolbar {
+    padding: 10px 14px;
+    background: #fafafa;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+    font-size: 13px;
+  }
+  #canvas-container {
+    flex: 1;
+    overflow: auto;
+    background: #e9eef3;
+    padding: 24px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  svg#floor {
+    background: white;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    display: block;
+    width: 100%;
+    max-width: 1200px;
+    height: auto;
+  }
+
+  /* room */
+  .room-fill { fill: #fafafa; stroke: none; }
+  .wall { stroke: #333; stroke-width: 50; stroke-linecap: square; fill: none; }
+  .column { fill: #2a2a2a; stroke: #000; stroke-width: 8; }
+  .room-name { font-size: 280px; fill: #555; text-anchor: middle; pointer-events: none; font-weight: 600; }
+  .room-size { font-size: 140px; fill: #888; text-anchor: middle; pointer-events: none; }
+  .column-label { font-size: 90px; fill: #fff; text-anchor: middle; pointer-events: none; font-weight: 600; }
+
+  /* door (引き戸) */
+  .slide-panel { stroke: #4a7ab8; stroke-width: 32; stroke-linecap: butt; fill: none; }
+  .slide-edge  { stroke: #4a7ab8; stroke-width: 10; }
+  .door-label  { font-size: 100px; fill: #4a7ab8; text-anchor: middle; pointer-events: none; font-weight: 600; }
+
+  /* grid */
+  .grid-line { stroke: #e6e9ee; stroke-width: 4; }
+  .grid-line-major { stroke: #c8cdd4; stroke-width: 8; }
+
+  /* dimension */
+  .dim-line { stroke: #d35454; stroke-width: 6; fill: none; }
+  .dim-tick { stroke: #d35454; stroke-width: 6; }
+  .dim-text { font-size: 130px; fill: #d35454; text-anchor: middle; font-weight: 600; }
+
+  /* furniture */
+  .furniture { cursor: grab; }
+  .furniture:active { cursor: grabbing; }
+  .furniture-shape { stroke-width: 12; }
+  .furniture-label { font-size: 110px; fill: #1a3a5e; text-anchor: middle; pointer-events: none; font-weight: 600; }
+  .furniture-dim { font-size: 85px; fill: #4a5a6e; text-anchor: middle; pointer-events: none; }
+  .furniture.selected .furniture-shape { stroke: #ff8800 !important; stroke-width: 24; stroke-dasharray: 60 30; }
+
+  /* sidebar UI */
+  h3 { margin: 14px 0 6px 0; font-size: 13px; color: #555; letter-spacing: 0.04em; }
+  h3:first-child { margin-top: 0; }
+  .palette-group { margin-bottom: 12px; }
+  .palette-group-title { font-size: 11px; color: #888; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .palette-item {
+    background: white;
+    border: 1px solid #d6d9de;
+    padding: 7px 9px;
+    margin-bottom: 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.1s;
+  }
+  .palette-item:hover { background: #eef3fb; border-color: #6a96d6; }
+  .palette-item .name { font-weight: 600; }
+  .palette-item .size { color: #888; font-size: 11px; margin-top: 2px; }
+
+  #selected-info {
+    background: white;
+    border: 1px solid #d6d9de;
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.6;
+    min-height: 60px;
+  }
+  .btn-row { display: flex; gap: 6px; margin-top: 6px; }
+  button {
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 12px;
+    border: 1px solid #c0c4ca;
+    background: white;
+    border-radius: 4px;
+  }
+  button:hover:not(:disabled) { background: #eef3fb; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .help { font-size: 11px; color: #666; line-height: 1.6; }
+  hr { border: none; border-top: 1px solid #e0e3e8; margin: 12px 0; }
+
+  #info {
+    font-family: monospace;
+    font-size: 12px;
+    color: #444;
+    margin-left: auto;
+    background: white;
+    padding: 4px 8px;
+    border-radius: 3px;
+    border: 1px solid #ddd;
+    min-width: 280px;
+    text-align: right;
+  }
+
+  /* === iPhone / 狭い画面向け === */
+  @media (max-width: 820px) {
+    body { flex-direction: column; height: 100vh; height: 100dvh; }
+    #sidebar {
+      width: 100%;
+      max-height: 42vh;
+      border-right: none;
+      border-bottom: 1px solid #ddd;
+      padding: 10px;
+    }
+    #canvas-wrap { flex: 1; min-height: 0; }
+    #canvas-container { padding: 8px; }
+    #toolbar { padding: 6px 10px; gap: 10px; font-size: 12px; }
+    #info { display: none; }
+    .palette-group { margin-bottom: 8px; }
+    .palette-item { padding: 5px 8px; margin-bottom: 3px; font-size: 11px; }
+    .palette-item .size { font-size: 10px; }
+    h3 { margin: 8px 0 4px 0; font-size: 12px; }
+    button { padding: 8px 12px; font-size: 13px; } /* 指で押しやすく */
+    .help { display: none; } /* 狭い画面では使い方を隠す */
+  }
+  /* タッチ操作中にページがスクロールしないように */
+  .furniture { touch-action: none; }
+  svg#floor { touch-action: none; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h3>家具を追加</h3>
+  <div id="palette"></div>
+
+  <hr>
+  <h3>選択中の家具</h3>
+  <div id="selected-info">家具を選択してください</div>
+  <div class="btn-row">
+    <button id="rotate-btn" disabled>90°回転</button>
+    <button id="delete-btn" disabled>削除</button>
+  </div>
+
+  <hr>
+  <h3>使い方</h3>
+  <div class="help">
+    ・パレットの家具をクリックで追加<br>
+    ・家具をドラッグで移動<br>
+    ・クリックで選択 → 回転/削除<br>
+    ・<b>Shift+ドラッグ</b>で自由配置（スナップOFF）<br>
+    ・グリッドは 1マス=100mm（濃い線=1m）
+  </div>
+</div>
+
+<div id="canvas-wrap">
+  <div id="toolbar">
+    <label><input type="checkbox" id="snap" checked> 50mm スナップ</label>
+    <label><input type="checkbox" id="show-grid" checked> グリッド</label>
+    <label><input type="checkbox" id="show-dim" checked> 寸法</label>
+    <span id="info">— 家具をドラッグすると座標が出ます</span>
+  </div>
+  <div id="canvas-container">
+    <!--
+      座標系（mm単位、原点 = LD左上）
+        LD     : x=1640..4740, y=0..4910        (幅3100 × 奥行4910)
+        洋室   : x=0..4740,    y=4910..8070     (幅4740 × 奥行3160) — 右下に柱の切欠き
+        柱     : x=4240..4740, y=7470..8070     (500 × 600mm 推定)
+        WCL扉  : 洋室の上辺(0〜1640区間)、x=350..1100
+        居室扉 : LD-洋室の境界、x=1900..2700
+    -->
+    <svg id="floor" viewBox="-800 -800 6400 9700" preserveAspectRatio="xMidYMid meet">
+      <g id="grid"></g>
+
+      <!-- 部屋（塗りつぶしのみ。壁は別レイヤー） -->
+      <g id="rooms-fill">
+        <!-- LD -->
+        <rect class="room-fill" x="1640" y="0" width="3100" height="4910"/>
+        <!-- 洋室（L字、柱の切欠き付き） -->
+        <path class="room-fill"
+              d="M 0 4910 L 4740 4910 L 4740 7470 L 4240 7470 L 4240 8070 L 0 8070 Z"/>
+      </g>
+
+      <!-- 柱 -->
+      <rect class="column" x="4240" y="7470" width="500" height="600"/>
+      <text class="column-label" x="4490" y="7800">柱</text>
+
+      <!-- 部屋ラベル -->
+      <g id="room-labels">
+        <text class="room-name" x="3190" y="2350">LD</text>
+        <text class="room-size" x="3190" y="2580">3,100 × 4,910 mm</text>
+        <text class="room-size" x="3190" y="2750" style="font-size:120px;">（約10.1帖）</text>
+
+        <text class="room-name" x="2120" y="6300">洋室</text>
+        <text class="room-size" x="2120" y="6530">4,740 × 3,160 mm</text>
+        <text class="room-size" x="2120" y="6700" style="font-size:120px;">（約10.0帖）</text>
+      </g>
+
+      <!-- 壁（扉の位置は途切れさせる） -->
+      <g id="walls">
+        <!-- LD 上 -->
+        <line class="wall" x1="1640" y1="0" x2="4740" y2="0"/>
+        <!-- LD 右 -->
+        <line class="wall" x1="4740" y1="0" x2="4740" y2="4910"/>
+        <!-- LD 左 -->
+        <line class="wall" x1="1640" y1="0" x2="1640" y2="4910"/>
+
+        <!-- 共有壁(LD底=洋室上)：WCL扉と居室扉で2か所途切れる -->
+        <line class="wall" x1="0"    y1="4910" x2="350"  y2="4910"/>
+        <!-- WCL 引き戸 350〜1150 はギャップ -->
+        <line class="wall" x1="1150" y1="4910" x2="2390" y2="4910"/>
+        <!-- 居室 引き戸 2390〜3990（中央寄せ）はギャップ -->
+        <line class="wall" x1="3990" y1="4910" x2="4740" y2="4910"/>
+
+        <!-- 洋室 右（柱の上まで）— 「右側くぼみ 2,560mm」 -->
+        <line class="wall" x1="4740" y1="4910" x2="4740" y2="7470"/>
+        <!-- 柱の天端（洋室内側との境界）-->
+        <line class="wall" x1="4240" y1="7470" x2="4740" y2="7470"/>
+        <!-- 柱の右側面（内側） -->
+        <line class="wall" x1="4240" y1="7470" x2="4240" y2="8070"/>
+        <!-- 洋室 下 -->
+        <line class="wall" x1="0" y1="8070" x2="4240" y2="8070"/>
+        <!-- 洋室 左 -->
+        <line class="wall" x1="0" y1="4910" x2="0"    y2="8070"/>
+      </g>
+
+      <!-- 扉（すべて引き戸 = スライド式。開閉スペースなし） -->
+      <g id="doors">
+        <!-- WCL 引き戸：幅800mm（1枚スライド） x=350..1150 -->
+        <line class="slide-panel" x1="350"  y1="4900" x2="1150" y2="4900"/>
+        <line class="slide-edge"  x1="350"  y1="4880" x2="350"  y2="4920"/>
+        <line class="slide-edge"  x1="1150" y1="4880" x2="1150" y2="4920"/>
+        <text class="door-label" x="750" y="5180">WCL 引き戸 W800</text>
+
+        <!-- LD↔洋室 引き戸：幅1,600mm（2枚引き）中央寄せ x=2390..3990 -->
+        <!-- 上側パネル(左半分) -->
+        <line class="slide-panel" x1="2390" y1="4890" x2="3190" y2="4890"/>
+        <!-- 下側パネル(右半分) - 軽くオフセットしてスライドを表現 -->
+        <line class="slide-panel" x1="3190" y1="4930" x2="3990" y2="4930"/>
+        <line class="slide-edge"  x1="2390" y1="4870" x2="2390" y2="4910"/>
+        <line class="slide-edge"  x1="3990" y1="4910" x2="3990" y2="4950"/>
+        <text class="door-label" x="3190" y="5180">LD↔洋室 引き戸 W1,600</text>
+      </g>
+
+      <!-- 寸法線 -->
+      <g id="dimensions">
+        <!-- LD 幅（上） -->
+        <line class="dim-line" x1="1640" y1="-350" x2="4740" y2="-350"/>
+        <line class="dim-tick" x1="1640" y1="-410" x2="1640" y2="-290"/>
+        <line class="dim-tick" x1="4740" y1="-410" x2="4740" y2="-290"/>
+        <text class="dim-text" x="3190" y="-450">LD 幅 3,100 mm</text>
+
+        <!-- LD 奥行（右） -->
+        <line class="dim-line" x1="5040" y1="0" x2="5040" y2="4910"/>
+        <line class="dim-tick" x1="4980" y1="0" x2="5100" y2="0"/>
+        <line class="dim-tick" x1="4980" y1="4910" x2="5100" y2="4910"/>
+        <text class="dim-text" x="5200" y="2455" transform="rotate(90 5200 2455)">LD 奥行 4,910 mm</text>
+
+        <!-- 右側くぼみ 2,560mm（洋室の右壁、柱より上） -->
+        <line class="dim-line" x1="5040" y1="4910" x2="5040" y2="7470"/>
+        <line class="dim-tick" x1="4980" y1="4910" x2="5100" y2="4910"/>
+        <line class="dim-tick" x1="4980" y1="7470" x2="5100" y2="7470"/>
+        <text class="dim-text" x="5200" y="6190" transform="rotate(90 5200 6190)">右側くぼみ 2,560 mm</text>
+
+        <!-- 洋室 奥行（左） -->
+        <line class="dim-line" x1="-350" y1="4910" x2="-350" y2="8070"/>
+        <line class="dim-tick" x1="-410" y1="4910" x2="-290" y2="4910"/>
+        <line class="dim-tick" x1="-410" y1="8070" x2="-290" y2="8070"/>
+        <text class="dim-text" x="-510" y="6490" transform="rotate(-90 -510 6490)">洋室 奥行 3,160 mm</text>
+
+        <!-- 洋室 幅（下） -->
+        <line class="dim-line" x1="0"    y1="8420" x2="4740" y2="8420"/>
+        <line class="dim-tick" x1="0"    y1="8360" x2="0"    y2="8480"/>
+        <line class="dim-tick" x1="4740" y1="8360" x2="4740" y2="8480"/>
+        <text class="dim-text" x="2370" y="8590">洋室 幅 4,740 mm</text>
+
+        <!-- 柱の寸法（小さく） -->
+        <text class="dim-text" x="4490" y="8260" style="font-size:90px;">500</text>
+        <text class="dim-text" x="4880" y="7800" style="font-size:90px;" transform="rotate(90 4880 7800)">600</text>
+      </g>
+
+      <!-- 家具レイヤー -->
+      <g id="furniture-layer"></g>
+    </svg>
+  </div>
+</div>
+
+<script>
+const SVG_NS = "http://www.w3.org/2000/svg";
+const svg = document.getElementById('floor');
+const furnitureLayer = document.getElementById('furniture-layer');
+const gridLayer = document.getElementById('grid');
+const dimLayer = document.getElementById('dimensions');
+const palette = document.getElementById('palette');
+const info = document.getElementById('info');
+const selectedInfoEl = document.getElementById('selected-info');
+const rotateBtn = document.getElementById('rotate-btn');
+const deleteBtn = document.getElementById('delete-btn');
+const snapCb = document.getElementById('snap');
+const showGridCb = document.getElementById('show-grid');
+const showDimCb = document.getElementById('show-dim');
+
+// =============================================
+// 家具カタログ（mm単位、一般的な標準サイズ）
+// =============================================
+const CATALOG = [
+  { group: 'ベッド', items: [
+    { id: 'queen-bed',       label: 'クイーンベッド',   w: 1640, h: 2050, color: '#a8c8e8' },
+    { id: 'double-bed',      label: 'ダブルベッド',     w: 1400, h: 1950, color: '#a8c8e8' },
+    { id: 'semi-double-bed', label: 'セミダブルベッド', w: 1200, h: 1950, color: '#a8c8e8' },
+    { id: 'single-bed',      label: 'シングルベッド',   w: 1000, h: 1950, color: '#a8c8e8' },
+  ]},
+  { group: 'デスク・椅子', items: [
+    { id: 'desk-l',  label: '作業デスク W1400', w: 1400, h: 700, color: '#d4b48c' },
+    { id: 'desk-m',  label: '作業デスク W1200', w: 1200, h: 600, color: '#d4b48c' },
+    { id: 'desk-s',  label: '作業デスク W1000', w: 1000, h: 600, color: '#d4b48c' },
+    { id: 'chair',   label: 'ワークチェア',     w:  600, h: 600, color: '#cccccc' },
+  ]},
+  { group: '化粧・収納', items: [
+    { id: 'dresser-l', label: '化粧台 W1000',     w: 1000, h: 450, color: '#e0b8d0' },
+    { id: 'dresser-m', label: '化粧台 W800',      w:  800, h: 450, color: '#e0b8d0' },
+    { id: 'dresser-s', label: '化粧台 W600',      w:  600, h: 400, color: '#e0b8d0' },
+    { id: 'nightstand',label: 'ナイトテーブル',   w:  450, h: 450, color: '#d4b48c' },
+    { id: 'closet-l',  label: 'クローゼット W1200', w: 1200, h: 600, color: '#c0a070' },
+    { id: 'closet-m',  label: 'クローゼット W900',  w:  900, h: 600, color: '#c0a070' },
+    { id: 'shelf',     label: '本棚 W900',         w:  900, h: 300, color: '#c0a070' },
+  ]},
+  { group: 'リビング', items: [
+    { id: 'sofa-3',  label: 'ソファ 3人掛け',   w: 2000, h: 900, color: '#bcd4a8' },
+    { id: 'sofa-2',  label: 'ソファ 2人掛け',   w: 1600, h: 850, color: '#bcd4a8' },
+    { id: 'tv-stand-l',label: 'TV台 W1500',     w: 1500, h: 400, color: '#888888' },
+    { id: 'tv-stand-m',label: 'TV台 W1200',     w: 1200, h: 400, color: '#888888' },
+    { id: 'rug-3',     label: 'ラグ 3畳相当',   w: 1400, h: 2000, color: '#f5e8b8' },
+    { id: 'rug-2',     label: 'ラグ 2畳相当',   w: 1400, h: 1400, color: '#f5e8b8' },
+  ]},
+  { group: 'ダイニング', items: [
+    { id: 'dining-4',  label: 'ダイニング 4人 W1200', w: 1200, h: 800, color: '#d4b48c' },
+    { id: 'dining-2',  label: 'ダイニング 2人 W800',  w:  800, h: 800, color: '#d4b48c' },
+    { id: 'dining-chair', label: 'ダイニングチェア',  w:  450, h: 500, color: '#cccccc' },
+  ]},
+  { group: 'カスタム', items: [
+    { id: 'custom-square', label: '汎用 1000×1000', w: 1000, h: 1000, color: '#d8d8d8' },
+  ]},
+];
+
+// =============================================
+// パレット構築
+// =============================================
+CATALOG.forEach(group => {
+  const wrap = document.createElement('div');
+  wrap.className = 'palette-group';
+  const title = document.createElement('div');
+  title.className = 'palette-group-title';
+  title.textContent = group.group;
+  wrap.appendChild(title);
+  group.items.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'palette-item';
+    div.innerHTML = `<div class="name">${item.label}</div><div class="size">${item.w} × ${item.h} mm</div>`;
+    div.style.borderLeft = `4px solid ${item.color}`;
+    div.onclick = () => addFurniture(item, 200, 5200);
+    wrap.appendChild(div);
+  });
+  palette.appendChild(wrap);
+});
+
+// =============================================
+// グリッド生成（100mm刻み、1000mm毎に濃く）
+// =============================================
+function buildGrid() {
+  gridLayer.innerHTML = '';
+  if (!showGridCb.checked) return;
+  const xMin = -800, xMax = 5600, yMin = -800, yMax = 8900;
+  for (let x = -800; x <= 5600; x += 100) {
+    const line = document.createElementNS(SVG_NS, 'line');
+    line.setAttribute('x1', x); line.setAttribute('x2', x);
+    line.setAttribute('y1', yMin); line.setAttribute('y2', yMax);
+    line.setAttribute('class', x % 1000 === 0 ? 'grid-line-major' : 'grid-line');
+    gridLayer.appendChild(line);
+  }
+  for (let y = -800; y <= 8900; y += 100) {
+    const line = document.createElementNS(SVG_NS, 'line');
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('x1', xMin); line.setAttribute('x2', xMax);
+    line.setAttribute('class', y % 1000 === 0 ? 'grid-line-major' : 'grid-line');
+    gridLayer.appendChild(line);
+  }
+}
+buildGrid();
+showGridCb.onchange = buildGrid;
+showDimCb.onchange = () => { dimLayer.style.display = showDimCb.checked ? '' : 'none'; };
+
+// =============================================
+// 家具配置ロジック
+// =============================================
+let furnitureCounter = 0;
+let selected = null;
+const placed = new Map();
+
+function addFurniture(spec, x, y) {
+  furnitureCounter++;
+  const id = `f${furnitureCounter}`;
+  const g = document.createElementNS(SVG_NS, 'g');
+  g.setAttribute('class', 'furniture');
+  g.setAttribute('data-id', id);
+
+  const rect = document.createElementNS(SVG_NS, 'rect');
+  rect.setAttribute('class', 'furniture-shape');
+  rect.setAttribute('x', 0);
+  rect.setAttribute('y', 0);
+  rect.setAttribute('width', spec.w);
+  rect.setAttribute('height', spec.h);
+  rect.setAttribute('fill', spec.color);
+  rect.setAttribute('fill-opacity', 0.65);
+  rect.setAttribute('stroke', shadeColor(spec.color, -30));
+  g.appendChild(rect);
+
+  // 向きを示す小さな三角（ベッドなら頭側、デスクなら手前）
+  const arrow = document.createElementNS(SVG_NS, 'polygon');
+  const ax = spec.w / 2, ay = 80;
+  arrow.setAttribute('points', `${ax-100},${ay+150} ${ax+100},${ay+150} ${ax},${ay}`);
+  arrow.setAttribute('fill', shadeColor(spec.color, -40));
+  arrow.setAttribute('opacity', '0.6');
+  g.appendChild(arrow);
+
+  const label = document.createElementNS(SVG_NS, 'text');
+  label.setAttribute('class', 'furniture-label');
+  label.setAttribute('x', spec.w / 2);
+  label.setAttribute('y', spec.h / 2);
+  label.textContent = spec.label;
+  g.appendChild(label);
+
+  const dim = document.createElementNS(SVG_NS, 'text');
+  dim.setAttribute('class', 'furniture-dim');
+  dim.setAttribute('x', spec.w / 2);
+  dim.setAttribute('y', spec.h / 2 + 130);
+  dim.textContent = `${spec.w} × ${spec.h}`;
+  g.appendChild(dim);
+
+  const data = { id, spec, x, y, rotation: 0, el: g };
+  furnitureLayer.appendChild(g);
+  placed.set(id, data);
+  updateTransform(data);
+  attachDrag(g, data);
+  selectFurniture(data);
+}
+
+function updateTransform(data) {
+  const cx = data.spec.w / 2;
+  const cy = data.spec.h / 2;
+  data.el.setAttribute('transform',
+    `translate(${data.x},${data.y}) rotate(${data.rotation} ${cx} ${cy})`);
+}
+
+function selectFurniture(data) {
+  document.querySelectorAll('.furniture.selected').forEach(el => el.classList.remove('selected'));
+  selected = data;
+  if (data) {
+    data.el.classList.add('selected');
+    refreshSelectedInfo();
+    rotateBtn.disabled = false;
+    deleteBtn.disabled = false;
+  } else {
+    selectedInfoEl.textContent = '家具を選択してください';
+    rotateBtn.disabled = true;
+    deleteBtn.disabled = true;
+  }
+}
+
+function refreshSelectedInfo() {
+  if (!selected) return;
+  const s = selected;
+  // 回転を考慮した実効占有サイズ
+  const effW = (s.rotation % 180 === 0) ? s.spec.w : s.spec.h;
+  const effH = (s.rotation % 180 === 0) ? s.spec.h : s.spec.w;
+  selectedInfoEl.innerHTML = `
+    <b>${s.spec.label}</b><br>
+    寸法: ${s.spec.w} × ${s.spec.h} mm<br>
+    位置 (左上): X=${Math.round(s.x)}, Y=${Math.round(s.y)}<br>
+    回転: ${s.rotation}°<br>
+    占有領域: ${effW} × ${effH} mm
+  `;
+}
+
+function getSVGPoint(evt) {
+  const pt = svg.createSVGPoint();
+  pt.x = evt.clientX; pt.y = evt.clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+function attachDrag(el, data) {
+  let dragging = false, startPt = null, startPos = null;
+  el.addEventListener('mousedown', (e) => {
+    e.stopPropagation();
+    selectFurniture(data);
+    dragging = true;
+    startPt = getSVGPoint(e);
+    startPos = { x: data.x, y: data.y };
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const pt = getSVGPoint(e);
+    let nx = startPos.x + (pt.x - startPt.x);
+    let ny = startPos.y + (pt.y - startPt.y);
+    if (snapCb.checked && !e.shiftKey) {
+      nx = Math.round(nx / 50) * 50;
+      ny = Math.round(ny / 50) * 50;
+    }
+    data.x = nx; data.y = ny;
+    updateTransform(data);
+    info.textContent = `${data.spec.label}: X=${Math.round(nx)} Y=${Math.round(ny)} (${data.spec.w}×${data.spec.h})`;
+    refreshSelectedInfo();
+  });
+  document.addEventListener('mouseup', () => { dragging = false; });
+  // タッチ対応
+  el.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    selectFurniture(data);
+    dragging = true;
+    const t = e.touches[0];
+    startPt = getSVGPoint(t);
+    startPos = { x: data.x, y: data.y };
+  });
+  document.addEventListener('touchmove', (e) => {
+    if (!dragging) return;
+    e.preventDefault(); // ドラッグ中はページのスクロールを止める
+    const t = e.touches[0];
+    const pt = getSVGPoint(t);
+    let nx = startPos.x + (pt.x - startPt.x);
+    let ny = startPos.y + (pt.y - startPt.y);
+    if (snapCb.checked) { nx = Math.round(nx/50)*50; ny = Math.round(ny/50)*50; }
+    data.x = nx; data.y = ny;
+    updateTransform(data);
+    refreshSelectedInfo();
+  }, { passive: false });
+  document.addEventListener('touchend', () => { dragging = false; });
+}
+
+rotateBtn.onclick = () => {
+  if (!selected) return;
+  selected.rotation = (selected.rotation + 90) % 360;
+  updateTransform(selected);
+  refreshSelectedInfo();
+};
+deleteBtn.onclick = () => {
+  if (!selected) return;
+  selected.el.remove();
+  placed.delete(selected.id);
+  selectFurniture(null);
+};
+
+// 背景クリックで選択解除
+svg.addEventListener('mousedown', (e) => {
+  if (e.target.closest('.furniture')) return;
+  selectFurniture(null);
+});
+
+// 色を暗くするヘルパ
+function shadeColor(hex, percent) {
+  const f = parseInt(hex.slice(1), 16);
+  const t = percent < 0 ? 0 : 255;
+  const p = Math.abs(percent) / 100;
+  const R = f >> 16, G = (f >> 8) & 0xFF, B = f & 0xFF;
+  const r = Math.round((t - R) * p) + R;
+  const g = Math.round((t - G) * p) + G;
+  const b = Math.round((t - B) * p) + B;
+  return '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
+}
+</script>
+</body>
+</html>
