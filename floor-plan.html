@@ -137,6 +137,46 @@
     text-align: right;
   }
 
+  /* カスタム家具追加フォーム */
+  #custom-form {
+    background: white;
+    border: 1px solid #d6d9de;
+    border-radius: 5px;
+    padding: 8px;
+    margin-bottom: 10px;
+  }
+  #custom-form input[type="text"],
+  #custom-form input[type="number"] {
+    padding: 7px 8px;
+    border: 1px solid #c0c4ca;
+    border-radius: 4px;
+    font-size: 13px;
+    box-sizing: border-box;
+    background: #fff;
+  }
+  #custom-form input[type="text"] { width: 100%; margin-bottom: 6px; }
+  #custom-form .cust-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  #custom-form .cust-row input { flex: 1; min-width: 0; }
+  #custom-form .cust-x { color: #888; font-weight: 600; }
+  #custom-form button {
+    width: 100%;
+    background: #4a7ab8;
+    color: white;
+    border: none;
+    padding: 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  #custom-form button:hover { background: #3a6aa8; }
+  #custom-form button:active { background: #2a5a98; }
+
   /* サイドバー畳みトグル */
   #sidebar-toggle {
     display: none;
@@ -196,7 +236,19 @@
 
 <div id="sidebar">
   <button id="sidebar-toggle">▲ 畳む（タップで開閉）</button>
-  <h3>家具を追加</h3>
+
+  <h3>カスタム家具を追加</h3>
+  <div id="custom-form">
+    <input type="text" id="cust-name" placeholder="家具名（例: クイーンベッド）" />
+    <div class="cust-row">
+      <input type="number" id="cust-w" placeholder="幅 mm" inputmode="numeric" />
+      <span class="cust-x">×</span>
+      <input type="number" id="cust-h" placeholder="奥行 mm" inputmode="numeric" />
+    </div>
+    <button id="cust-add">この家具を追加</button>
+  </div>
+
+  <h3>家具プリセット</h3>
   <div id="palette"></div>
 
   <hr>
@@ -618,6 +670,31 @@ deleteBtn.onclick = () => {
   placed.delete(selected.id);
   selectFurniture(null);
 };
+
+// カスタム家具を追加
+document.getElementById('cust-add').addEventListener('click', () => {
+  const nameEl = document.getElementById('cust-name');
+  const wEl = document.getElementById('cust-w');
+  const hEl = document.getElementById('cust-h');
+  const name = (nameEl.value || '').trim() || 'カスタム家具';
+  const w = parseInt(wEl.value, 10);
+  const h = parseInt(hEl.value, 10);
+  if (!w || !h || w < 50 || h < 50 || w > 6000 || h > 6000) {
+    alert('幅・奥行を 50〜6000 mm の範囲で半角数字で入れてね');
+    return;
+  }
+  // 配置済み数で少しずつズラして重ならないように
+  const offset = (placed.size % 6) * 120;
+  addFurniture({
+    id: `custom-${Date.now()}`,
+    label: name,
+    w, h,
+    color: '#cfd8dc',
+  }, 100 + offset, 5200 + offset);
+  nameEl.value = '';
+  wEl.value = '';
+  hEl.value = '';
+});
 
 // サイドバー畳みトグル
 const sidebarEl = document.getElementById('sidebar');
