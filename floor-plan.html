@@ -226,8 +226,9 @@
   }
   /* タッチ操作の制御
      ・家具の上 = ドラッグ専用(スクロール禁止)
-     ・それ以外 = 縦スクロール + ピンチズームOK */
-  .furniture { touch-action: none; }
+     ・それ以外 = 縦スクロール + ピンチズームOK
+     ※ 子要素にも明示的に効かせないと iOS Safari で背景スクロールが入る */
+  .furniture, .furniture * { touch-action: none; }
   svg#floor { touch-action: pan-y pinch-zoom; }
   #canvas-container { -webkit-overflow-scrolling: touch; }
 </style>
@@ -660,6 +661,12 @@ function endDrag(e) {
 }
 window.addEventListener('pointerup', endDrag);
 window.addEventListener('pointercancel', endDrag);
+
+// 保険: ドラッグ中はネイティブの touchmove も止める
+// (iOS Safari は touch-action だけだと背景スクロールが入ることがある)
+window.addEventListener('touchmove', (e) => {
+  if (activeDrag) e.preventDefault();
+}, { passive: false });
 
 rotateBtn.onclick = () => {
   if (!selected) return;
