@@ -220,6 +220,7 @@
     <label><input type="checkbox" id="snap" checked> 50mm スナップ</label>
     <label><input type="checkbox" id="show-grid" checked> グリッド</label>
     <label><input type="checkbox" id="show-dim" checked> 寸法</label>
+    <span id="dbg" style="font-family:monospace; font-size:11px; color:#666; padding:2px 6px; background:#fff; border:1px solid #ddd; border-radius:3px;">D:0 M:0 U:0</span>
     <span id="info">— 家具をドラッグすると座標が出ます</span>
   </div>
   <div id="canvas-container">
@@ -503,7 +504,6 @@ function addFurniture(spec, x, y) {
   furnitureLayer.appendChild(g);
   placed.set(id, data);
   updateTransform(data);
-  attachDrag(g, data);
   selectFurniture(data);
 }
 
@@ -550,40 +550,72 @@ function getSVGPoint(evt) {
   return pt.matrixTransform(svg.getScreenCTM().inverse());
 }
 
-// pointer events に統一（マウス・タッチ・スタイラスを一括処理 / iOS Safari で確実に動く）
-function attachDrag(el, data) {
-  el.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    selectFurniture(data);
-    try { el.setPointerCapture(e.pointerId); } catch (_) {}
-    const startPt = getSVGPoint(e);
-    const startPos = { x: data.x, y: data.y };
+// =============================================
+// ドラッグ処理（iOS Safari で動かないバグ対策の決定版）
+// - pointerdown は SVG ルートで委譲受け取り（家具グループに直接付けない）
+// - pointermove/up は window で listen（指がSVG外に出ても追従するように）
+// - setPointerCapture は使わない（Safari の SVG では不安定）
+// =============================================
+let activeDrag = null;
 
-    function onMove(ev) {
-      const pt = getSVGPoint(ev);
-      let nx = startPos.x + (pt.x - startPt.x);
-      let ny = startPos.y + (pt.y - startPt.y);
-      if (snapCb.checked && !ev.shiftKey) {
-        nx = Math.round(nx / 50) * 50;
-        ny = Math.round(ny / 50) * 50;
-      }
-      data.x = nx; data.y = ny;
-      updateTransform(data);
-      info.textContent = `${data.spec.label}: X=${Math.round(nx)} Y=${Math.round(ny)} (${data.spec.w}×${data.spec.h})`;
-      refreshSelectedInfo();
-    }
-    function onEnd() {
-      el.removeEventListener('pointermove', onMove);
-      el.removeEventListener('pointerup', onEnd);
-      el.removeEventListener('pointercancel', onEnd);
-      try { el.releasePointerCapture(e.pointerId); } catch (_) {}
-    }
-    el.addEventListener('pointermove', onMove);
-    el.addEventListener('pointerup', onEnd);
-    el.addEventListener('pointercancel', onEnd);
-  });
+// デバッグカウンター（イベントが発火しているか目視確認するため）
+const dbgEl = document.getElementById('dbg');
+let _dCount = 0, _mCount = 0, _uCount = 0;
+function bumpDbg(kind) {
+  if (kind === 'd') _dCount++;
+  else if (kind === 'm') _mCount++;
+  else if (kind === 'u') _uCount++;
+  if (dbgEl) dbgEl.textContent = `D:${_dCount} M:${_mCount} U:${_uCount}`;
 }
+
+svg.addEventListener('pointerdown', (e) => {
+  bumpDbg('d');
+  const targetEl = e.target.closest('.furniture');
+  if (!targetEl) {
+    selectFurniture(null);
+    return;
+  }
+  const data = placed.get(targetEl.dataset.id);
+  if (!data) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+  selectFurniture(data);
+
+  activeDrag = {
+    pointerId: e.pointerId,
+    data,
+    startPt: getSVGPoint(e),
+    startPos: { x: data.x, y: data.y },
+  };
+}, { passive: false });
+
+window.addEventListener('pointermove', (e) => {
+  if (!activeDrag || e.pointerId !== activeDrag.pointerId) return;
+  bumpDbg('m');
+  e.preventDefault();
+  const { data, startPt, startPos } = activeDrag;
+  const pt = getSVGPoint(e);
+  let nx = startPos.x + (pt.x - startPt.x);
+  let ny = startPos.y + (pt.y - startPt.y);
+  if (snapCb.checked && !e.shiftKey) {
+    nx = Math.round(nx / 50) * 50;
+    ny = Math.round(ny / 50) * 50;
+  }
+  data.x = nx; data.y = ny;
+  updateTransform(data);
+  if (info) info.textContent = `${data.spec.label}: X=${Math.round(nx)} Y=${Math.round(ny)}`;
+  refreshSelectedInfo();
+}, { passive: false });
+
+function endDrag(e) {
+  if (!activeDrag) return;
+  if (e && e.pointerId !== undefined && e.pointerId !== activeDrag.pointerId) return;
+  bumpDbg('u');
+  activeDrag = null;
+}
+window.addEventListener('pointerup', endDrag);
+window.addEventListener('pointercancel', endDrag);
 
 rotateBtn.onclick = () => {
   if (!selected) return;
@@ -597,12 +629,6 @@ deleteBtn.onclick = () => {
   placed.delete(selected.id);
   selectFurniture(null);
 };
-
-// 背景タップ/クリックで選択解除
-svg.addEventListener('pointerdown', (e) => {
-  if (e.target.closest('.furniture')) return;
-  selectFurniture(null);
-});
 
 // サイドバー畳みトグル
 const sidebarEl = document.getElementById('sidebar');
