@@ -257,6 +257,7 @@
   <div class="btn-row">
     <button id="rotate-btn" disabled>90°回転</button>
     <button id="delete-btn" disabled>削除</button>
+    <button id="reset-btn" title="全ての家具を消去">全削除</button>
   </div>
 
   <hr>
@@ -559,6 +560,7 @@ function addFurniture(spec, x, y) {
   placed.set(id, data);
   updateTransform(data);
   selectFurniture(data);
+  saveState();
 }
 
 function updateTransform(data) {
@@ -654,6 +656,7 @@ function endDrag(e) {
   if (!activeDrag) return;
   if (e && e.pointerId !== undefined && e.pointerId !== activeDrag.pointerId) return;
   activeDrag = null;
+  saveState();
 }
 window.addEventListener('pointerup', endDrag);
 window.addEventListener('pointercancel', endDrag);
@@ -663,13 +666,55 @@ rotateBtn.onclick = () => {
   selected.rotation = (selected.rotation + 90) % 360;
   updateTransform(selected);
   refreshSelectedInfo();
+  saveState();
 };
 deleteBtn.onclick = () => {
   if (!selected) return;
   selected.el.remove();
   placed.delete(selected.id);
   selectFurniture(null);
+  saveState();
 };
+document.getElementById('reset-btn').onclick = () => {
+  if (placed.size === 0) return;
+  if (!confirm('置いた家具を全部消します。よろしいですか？')) return;
+  Array.from(placed.values()).forEach(d => d.el.remove());
+  placed.clear();
+  selectFurniture(null);
+  saveState();
+};
+
+// =============================================
+// 状態の永続化（localStorage）
+// 端末ごとに保存される。同じURLでも別端末では別の状態。
+// =============================================
+const STORAGE_KEY = 'house-layout-v1';
+function saveState() {
+  try {
+    const state = Array.from(placed.values()).map(d => ({
+      spec: d.spec, x: d.x, y: d.y, rotation: d.rotation || 0,
+    }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (_) { /* quota / private mode などは黙って無視 */ }
+}
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const state = JSON.parse(raw);
+    if (!Array.isArray(state)) return;
+    state.forEach(item => {
+      if (!item || !item.spec) return;
+      addFurniture(item.spec, item.x || 200, item.y || 5200);
+      const data = placed.get(`f${furnitureCounter}`);
+      if (data) {
+        data.rotation = item.rotation || 0;
+        updateTransform(data);
+      }
+    });
+    selectFurniture(null);
+  } catch (_) {}
+}
 
 // カスタム家具を追加
 document.getElementById('cust-add').addEventListener('click', () => {
@@ -717,6 +762,9 @@ function shadeColor(hex, percent) {
   const b = Math.round((t - B) * p) + B;
   return '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
 }
+
+// 前回の配置を復元
+loadState();
 </script>
 </body>
 </html>
