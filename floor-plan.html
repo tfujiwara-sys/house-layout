@@ -184,9 +184,12 @@
     button { padding: 8px 12px; font-size: 13px; } /* 指で押しやすく */
     .help { display: none; } /* 狭い画面では使い方を隠す */
   }
-  /* タッチ操作中にページがスクロールしないように */
+  /* タッチ操作の制御
+     ・家具の上 = ドラッグ専用(スクロール禁止)
+     ・それ以外 = 縦スクロール + ピンチズームOK */
   .furniture { touch-action: none; }
-  svg#floor { touch-action: none; }
+  svg#floor { touch-action: pan-y pinch-zoom; }
+  #canvas-container { -webkit-overflow-scrolling: touch; }
 </style>
 </head>
 <body>
@@ -220,7 +223,6 @@
     <label><input type="checkbox" id="snap" checked> 50mm スナップ</label>
     <label><input type="checkbox" id="show-grid" checked> グリッド</label>
     <label><input type="checkbox" id="show-dim" checked> 寸法</label>
-    <span id="dbg" style="font-family:monospace; font-size:11px; color:#666; padding:2px 6px; background:#fff; border:1px solid #ddd; border-radius:3px;">D:0 M:0 U:0</span>
     <span id="info">— 家具をドラッグすると座標が出ます</span>
   </div>
   <div id="canvas-container">
@@ -558,18 +560,7 @@ function getSVGPoint(evt) {
 // =============================================
 let activeDrag = null;
 
-// デバッグカウンター（イベントが発火しているか目視確認するため）
-const dbgEl = document.getElementById('dbg');
-let _dCount = 0, _mCount = 0, _uCount = 0;
-function bumpDbg(kind) {
-  if (kind === 'd') _dCount++;
-  else if (kind === 'm') _mCount++;
-  else if (kind === 'u') _uCount++;
-  if (dbgEl) dbgEl.textContent = `D:${_dCount} M:${_mCount} U:${_uCount}`;
-}
-
 svg.addEventListener('pointerdown', (e) => {
-  bumpDbg('d');
   const targetEl = e.target.closest('.furniture');
   if (!targetEl) {
     selectFurniture(null);
@@ -592,7 +583,6 @@ svg.addEventListener('pointerdown', (e) => {
 
 window.addEventListener('pointermove', (e) => {
   if (!activeDrag || e.pointerId !== activeDrag.pointerId) return;
-  bumpDbg('m');
   e.preventDefault();
   const { data, startPt, startPos } = activeDrag;
   const pt = getSVGPoint(e);
@@ -611,7 +601,6 @@ window.addEventListener('pointermove', (e) => {
 function endDrag(e) {
   if (!activeDrag) return;
   if (e && e.pointerId !== undefined && e.pointerId !== activeDrag.pointerId) return;
-  bumpDbg('u');
   activeDrag = null;
 }
 window.addEventListener('pointerup', endDrag);
